@@ -221,7 +221,7 @@ impl MemorySet {
 
 /// map area structure, controls a contiguous piece of virtual memory
 pub struct MapArea {
-    vpn_range: VPNRange,
+    vpn_range: VPNRange,                                // describe a continuity interval of VPN [成段的连续的VPN] 
     data_frames: BTreeMap<VirtPageNum, FrameTracker>,
     map_type: MapType,
     map_perm: MapPermission,
@@ -306,11 +306,13 @@ impl MapArea {
 
 #[derive(Copy, Clone, PartialEq, Debug)]
 /// map type for memory set: identical or framed
+// using for describe the ways all VPN in this logical segment map to PPN
 pub enum MapType {
     Identical,
     Framed,
 }
 
+// packaging a set of bool to a u8
 bitflags! {
     /// map permission corresponding to that in pte: `R W X U`
     pub struct MapPermission: u8 {

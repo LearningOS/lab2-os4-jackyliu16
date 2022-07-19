@@ -4,6 +4,8 @@ use super::PageTableEntry;
 use crate::config::{PAGE_SIZE, PAGE_SIZE_BITS};
 use core::fmt::{self, Debug, Formatter};
 
+// a simple packing of variable in PhyAddr, VirtAddr, PhysPageNum, VirtPageNum
+// for type conversion 
 /// physical address
 #[derive(Copy, Clone, Ord, PartialOrd, Eq, PartialEq)]
 pub struct PhysAddr(pub usize);
@@ -151,15 +153,19 @@ impl VirtPageNum {
     }
 }
 
+// view a specical PhyPage frame
 impl PhysPageNum {
+    // return a mutable reference of Fixed-length array
     pub fn get_pte_array(&self) -> &'static mut [PageTableEntry] {
         let pa: PhysAddr = (*self).into();
         unsafe { core::slice::from_raw_parts_mut(pa.0 as *mut PageTableEntry, 512) }
     }
+    // return a byte array mutable reference 
     pub fn get_bytes_array(&self) -> &'static mut [u8] {
         let pa: PhysAddr = (*self).into();
         unsafe { core::slice::from_raw_parts_mut(pa.0 as *mut u8, 4096) }
     }
+    // return a T, which put in the right place exactly
     pub fn get_mut<T>(&self) -> &'static mut T {
         let pa: PhysAddr = (*self).into();
         unsafe { (pa.0 as *mut T).as_mut().unwrap() }

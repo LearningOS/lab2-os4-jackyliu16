@@ -5,6 +5,7 @@ use alloc::vec;
 use alloc::vec::Vec;
 use bitflags::*;
 
+// a macro using for represent bit flag bit 
 bitflags! {
     /// page table entry flags
     pub struct PTEFlags: u8 {
@@ -19,7 +20,7 @@ bitflags! {
     }
 }
 
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone)]      // let the compiler implement the copy and clone for us
 #[repr(C)]
 /// page table entry structure
 pub struct PageTableEntry {
@@ -27,11 +28,13 @@ pub struct PageTableEntry {
 }
 
 impl PageTableEntry {
+    // import the first 44bit of physical page and the 8bit of flag
     pub fn new(ppn: PhysPageNum, flags: PTEFlags) -> Self {
         PageTableEntry {
             bits: ppn.0 << 10 | flags.bits as usize,
         }
     }
+    // create a illegal pageTableEntry
     pub fn empty() -> Self {
         PageTableEntry { bits: 0 }
     }
@@ -41,6 +44,7 @@ impl PageTableEntry {
     pub fn flags(&self) -> PTEFlags {
         PTEFlags::from_bits(self.bits as u8).unwrap()
     }
+    // chcek if [V, R, W, X] is 1
     pub fn is_valid(&self) -> bool {
         (self.flags() & PTEFlags::V) != PTEFlags::empty()
     }
@@ -55,10 +59,17 @@ impl PageTableEntry {
     }
 }
 
+/*  page table structure
+
+    a kinds of structure to save all kind of information about application's frame 
+    
+    and let them lifecyle as a same things.
+*/
+
 /// page table structure
 pub struct PageTable {
-    root_ppn: PhysPageNum,
-    frames: Vec<FrameTracker>,
+    root_ppn: PhysPageNum,          // As PRIMARY KEY ???
+    frames: Vec<FrameTracker>,      // Vec for all frame information
 }
 
 /// Assume that it won't oom when creating/mapping.
@@ -71,12 +82,15 @@ impl PageTable {
         }
     }
     /// Temporarily used to get arguments from user space.
+    // temply create a pageTable just using for check page-table manaly
+    // input a satp_token get a root_ppn his frames was empty and havn't control any kind of source.
     pub fn from_token(satp: usize) -> Self {
         Self {
             root_ppn: PhysPageNum::from(satp & ((1usize << 44) - 1)),
             frames: Vec::new(),
         }
     }
+    // if find empty pointer then try to allow frame
     fn find_pte_create(&mut self, vpn: VirtPageNum) -> Option<&mut PageTableEntry> {
         let mut idxs = vpn.indexes();
         let mut ppn = self.root_ppn;
@@ -96,6 +110,7 @@ impl PageTable {
         }
         result
     }
+    // if find empty pointer then return None
     fn find_pte(&self, vpn: VirtPageNum) -> Option<&PageTableEntry> {
         let idxs = vpn.indexes();
         let mut ppn = self.root_ppn;
@@ -113,6 +128,7 @@ impl PageTable {
         }
         result
     }
+    // create a map and release a map from vpn => ppn
     #[allow(unused)]
     pub fn map(&mut self, vpn: VirtPageNum, ppn: PhysPageNum, flags: PTEFlags) {
         let pte = self.find_pte_create(vpn).unwrap();
@@ -125,9 +141,11 @@ impl PageTable {
         assert!(pte.is_valid(), "vpn {:?} is invalid before unmapping", vpn);
         *pte = PageTableEntry::empty();
     }
+    // if could `find_pte` then copy VirtPageNum and return else just return None
     pub fn translate(&self, vpn: VirtPageNum) -> Option<PageTableEntry> {
         self.find_pte(vpn).copied()
     }
+    // ?
     pub fn token(&self) -> usize {
         8usize << 60 | self.root_ppn.0
     }

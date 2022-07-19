@@ -23,7 +23,9 @@ use page_table::{PTEFlags, PageTable};
 
 /// initiate heap allocator, frame allocator and kernel space
 pub fn init() {
-    heap_allocator::init_heap();
-    frame_allocator::init_frame_allocator();
-    KERNEL_SPACE.lock().activate();
+    heap_allocator::init_heap();                    // global memory allocator      [alloc and dealloc frame]
+    frame_allocator::init_frame_allocator();        // physical frame allocator
+    KERNEL_SPACE.lock().activate();                 // create kernel_space and start paging model
+    // kernel will be init when the first time it have been use
+    // 
 }

@@ -14,6 +14,7 @@ mod switch;
 #[allow(clippy::module_inception)]
 mod task;
 
+use crate::config::MAX_SYSCALL_NUM;
 use crate::loader::{get_app_data, get_num_app};
 use crate::sync::UPSafeCell;
 use crate::trap::TrapContext;
@@ -147,6 +148,17 @@ impl TaskManager {
             panic!("All applications completed!");
         }
     }
+
+    fn get_current_task_status(&self) -> Option<TaskStatus> {
+        let inner = self.inner.exclusive_access();
+        Some(inner.tasks[inner.current_task].task_status)
+    }
+
+    //TODO
+    fn get_current_syscall_record(&self) -> Option<[u32; MAX_SYSCALL_NUM]> {
+        let inner = self.inner.exclusive_access();
+        Some(inner.tasks[inner.current_task])
+    }
 }
 
 /// Run the first task in task list.
@@ -190,4 +202,23 @@ pub fn current_user_token() -> usize {
 /// Get the current 'Running' task's trap contexts.
 pub fn current_trap_cx() -> &'static mut TrapContext {
     TASK_MANAGER.get_current_trap_cx()
+}
+
+pub fn current_info() -> (TaskStatus, [u32; MAX_SYSCALL_NUM], usize) {
+    let (status, syscall_record, first_run_time) : (TaskStatus, [u32; MAX_SYSCALL_NUM], usize);
+    status = match TASK_MANAGER.get_current_task_status() {
+        Some(status) => status,
+        _ => TaskStatus::UnInit
+    };
+    syscall_record = match TASK_MANAGER.get_current_syscall_record() {
+        Some(syscall_record) => syscall_record,
+        _ => [0; MAX_SYSCALL_NUM],
+    };
+
+    // BC we only record the first run time of this programe so we just using the time right now to sub it 
+    first_run_time = match TASK_MANAGER.get_current_task_first_run_time() {
+        Some(first_run_time) => (get_time_us() - first_run_time) / 1000,
+        _ => 0,
+    };
+    (status, syscall_record, first_run_time)
 }

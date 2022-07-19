@@ -44,17 +44,21 @@ trait FrameAllocator {
 
 /// an implementation for frame allocator
 pub struct StackFrameAllocator {
+    // [current, end) haven't been allocation
     current: usize,
     end: usize,
-    recycled: Vec<usize>,
+    recycled: Vec<usize>,       // saving the recyle physical blanker as queue
 }
 
+// init a real StackFrameAllocator
+// using before it been use readly
 impl StackFrameAllocator {
     pub fn init(&mut self, l: PhysPageNum, r: PhysPageNum) {
         self.current = l.0;
         self.end = r.0;
     }
 }
+
 impl FrameAllocator for StackFrameAllocator {
     fn new() -> Self {
         Self {
@@ -63,11 +67,16 @@ impl FrameAllocator for StackFrameAllocator {
             recycled: Vec::new(),
         }
     }
+    // allocation memory
+    // 1. first check if have anykind of recycled physical page
+    //      if => ret
+    //      else => allocate from [current, end)
+
     fn alloc(&mut self) -> Option<PhysPageNum> {
         if let Some(ppn) = self.recycled.pop() {
             Some(ppn.into())
         } else if self.current == self.end {
-            None
+            None        // ? so you just let error ? not handler it right now? 
         } else {
             self.current += 1;
             Some((self.current - 1).into())
@@ -75,7 +84,7 @@ impl FrameAllocator for StackFrameAllocator {
     }
     fn dealloc(&mut self, ppn: PhysPageNum) {
         let ppn = ppn.0;
-        // validity check
+        // validity check   check if this PhyPage been alloc and haven't been dealloc
         if ppn >= self.current || self.recycled.iter().any(|v| *v == ppn) {
             panic!("Frame ppn={:#x} has not been allocated!", ppn);
         }
@@ -92,6 +101,7 @@ lazy_static! {
         unsafe { UPSafeCell::new(FrameAllocatorImpl::new()) };
 }
 
+// this is a kind of total PhyPage manager
 /// initiate the frame allocator using `ekernel` and `MEMORY_END`
 pub fn init_frame_allocator() {
     extern "C" {
