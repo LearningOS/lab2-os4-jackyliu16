@@ -29,12 +29,14 @@ pub struct PageTableEntry {
 
 impl PageTableEntry {
     // import the first 44bit of physical page and the 8bit of flag
+    // we could using a PhysPageNum(PPN) and PTEFlags(bitflag) to create a PageTableEntry
     pub fn new(ppn: PhysPageNum, flags: PTEFlags) -> Self {
         PageTableEntry {
             bits: ppn.0 << 10 | flags.bits as usize,
         }
     }
     // create a illegal pageTableEntry
+    // check if it's empty
     pub fn empty() -> Self {
         PageTableEntry { bits: 0 }
     }
@@ -131,7 +133,7 @@ impl PageTable {
     // create a map and release a map from vpn => ppn
     #[allow(unused)]
     pub fn map(&mut self, vpn: VirtPageNum, ppn: PhysPageNum, flags: PTEFlags) {
-        let pte = self.find_pte_create(vpn).unwrap();
+        let pte:&mut PageTableEntry = self.find_pte_create(vpn).unwrap();
         assert!(!pte.is_valid(), "vpn {:?} is mapped before mapping", vpn);
         *pte = PageTableEntry::new(ppn, flags | PTEFlags::V);
     }
@@ -172,4 +174,25 @@ pub fn translated_byte_buffer(token: usize, ptr: *const u8, len: usize) -> Vec<&
         start = end_va.into();
     }
     v
+}
+
+
+// public function:
+// pub fn get_phyAddr(token: usize, p: &mut syscall::process ) {
+
+// }
+
+// #[allow(unused, dead_code)]
+// token: the address of current user
+// p: a address of pointer 
+// we changing the address of pointer to a frame 
+pub fn get_phy_addr(token: usize, p: usize) -> usize{
+    let page_table = PageTable::from_token(token);           // get page table 
+    let virt_addr = VirtAddr(p);                                   // get VA from pointer
+    let vpn = virt_addr.floor();                                // get VPN
+    let ppn = page_table                              //   
+                                        .translate(vpn)// using page table and VPN to find PPN
+                                        .unwrap()                       
+                                        .ppn();
+    ppn.0 << 12 | virt_addr.page_offset() as usize
 }

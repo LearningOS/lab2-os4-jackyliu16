@@ -1,13 +1,36 @@
 //! Types related to task management
 use super::TaskContext;
-use crate::config::{kernel_stack_position, TRAP_CONTEXT};
+use crate::config::{kernel_stack_position, TRAP_CONTEXT, MAX_SYSCALL_NUM};
 use crate::mm::{MapPermission, MemorySet, PhysPageNum, VirtAddr, KERNEL_SPACE};
 use crate::trap::{trap_handler, TrapContext};
+
+#[derive(Copy, Clone, Debug)]
+pub struct TaskStatsInfo {
+    pub first_run_time: usize,
+    pub system_call_record: [u32; MAX_SYSCALL_NUM],
+}
+
+impl Default for TaskStatsInfo {
+    fn default() -> Self {
+        TaskStatsInfo { 
+            // task_status: TaskStatus,        
+            first_run_time: 0, 
+            system_call_record: [0; MAX_SYSCALL_NUM] 
+        }
+    }
+}
+
+impl TaskStatsInfo {
+    pub fn get_info(&self) -> ([u32; MAX_SYSCALL_NUM], usize) {
+        (self.system_call_record, self.first_run_time)
+    }
+}
 
 /// task control block structure
 pub struct TaskControlBlock {
     pub task_status: TaskStatus,
     pub task_cx: TaskContext,
+    pub stats: TaskStatsInfo,
     pub memory_set: MemorySet,
     pub trap_cx_ppn: PhysPageNum,
     pub base_size: usize,
@@ -35,9 +58,14 @@ impl TaskControlBlock {
             kernel_stack_top.into(),
             MapPermission::R | MapPermission::W,
         );
+        let stats = TaskStatsInfo { 
+            first_run_time: 0, 
+            system_call_record: [0 ; MAX_SYSCALL_NUM] 
+        };
         let task_control_block = Self {
             task_status,
             task_cx: TaskContext::goto_trap_return(kernel_stack_top),
+            stats,
             memory_set,
             trap_cx_ppn,
             base_size: user_sp,

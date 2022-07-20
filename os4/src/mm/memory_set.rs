@@ -25,19 +25,25 @@ extern "C" {
     fn strampoline();
 }
 
+// create a global inistance of Kernel address space.
 lazy_static! {
     /// a memory set instance through lazy_static! managing kernel space
+    // Arc<T> provide shared reference; Mutex provide mutual exclusion; 
     pub static ref KERNEL_SPACE: Arc<Mutex<MemorySet>> =
         Arc::new(Mutex::new(MemorySet::new_kernel()));
 }
 
+// a set of all MapArea that a application has been divide. 
+// so, when a application is going to the end of his live time,     
+// 用来表明正在运行的应用所在执行环境中的可访问内存空间，在这个内存空间中，包含了一系列的不一定连续的逻辑段。
 /// memory set structure, controls virtual-memory space
 pub struct MemorySet {
-    page_table: PageTable,
-    areas: Vec<MapArea>,
+    page_table: PageTable,      // the address space of this memory structure 
+    areas: Vec<MapArea>,        // 
 }
 
 impl MemorySet {
+    // create a new address space 
     pub fn new_bare() -> Self {
         Self {
             page_table: PageTable::new(),
@@ -59,12 +65,33 @@ impl MemorySet {
             None,
         );
     }
+    // push a new logical segment map_area ( if it's using a MapType::Framed to map to PhysAddr, then he could also choice to write something in frame)
     fn push(&mut self, mut map_area: MapArea, data: Option<&[u8]>) {
         map_area.map(&mut self.page_table);
         if let Some(data) = data {
             map_area.copy_data(&mut self.page_table, data);
         }
         self.areas.push(map_area);
+    }
+    #[allow(unused)]
+    pub fn remove_map_area(&mut self, start_va: VirtPageNum) -> bool {
+        // 理论上不会存在错误?
+        // for map_area in self.areas.iter() {
+        //     if map_area.vpn_range.get_start() == start_va && map_area.vpn_range.get_end() == end_va {
+        //         // map_area.unmap(page_table)
+        //         drop(map_area);
+        //     }
+        // }
+        
+        for i in 0..self.areas.len() {
+            if self.areas[i].is_map(start_va) {
+                self.areas[i].unmap(&mut self.page_table);
+                self.areas.remove(i);
+                return true;
+            } else { println!("error ");}
+        }
+        false
+
     }
     /// Mention that trampoline is not collected by areas.
     fn map_trampoline(&mut self) {
@@ -74,6 +101,7 @@ impl MemorySet {
             PTEFlags::R | PTEFlags::X,
         );
     }
+    // create address space of kernel
     /// Without kernel stacks.
     pub fn new_kernel() -> Self {
         let mut memory_set = Self::new_bare();
@@ -217,8 +245,27 @@ impl MemorySet {
     pub fn translate(&self, vpn: VirtPageNum) -> Option<PageTableEntry> {
         self.page_table.translate(vpn)
     }
+    // check if all his MapArea has been map
+    pub fn is_all_map(&self, vpn: VirtPageNum) -> bool{
+        for item in self.areas.iter() {
+            if item.is_map(vpn) {
+                return true
+            }
+        }
+        false
+    }
+
+    pub fn is_not_all_map(&self, vpn: VirtPageNum) -> bool {
+        for item in self.areas.iter() {
+            if item.is_map(vpn) {
+                return false
+            }
+        }
+        true
+    }
 }
 
+// using for describute logically in segments ( which contains a kinds of .bss, .data and so on. )
 /// map area structure, controls a contiguous piece of virtual memory
 pub struct MapArea {
     vpn_range: VPNRange,                                // describe a continuity interval of VPN [成段的连续的VPN] 
@@ -228,7 +275,7 @@ pub struct MapArea {
 }
 
 impl MapArea {
-    pub fn new(
+    pub fn new( // create a MapArea struct
         start_va: VirtAddr,
         end_va: VirtAddr,
         map_type: MapType,
@@ -243,6 +290,7 @@ impl MapArea {
             map_perm,
         }
     }
+    // TODO haven't understand
     pub fn map_one(&mut self, page_table: &mut PageTable, vpn: VirtPageNum) {
         let ppn: PhysPageNum;
         match self.map_type {
@@ -269,6 +317,8 @@ impl MapArea {
         }
         page_table.unmap(vpn);
     }
+    // create and delete the map between self(logical segment) and the PTE
+    // using the function of ( map_one, and unmap_one ) to finish this actions 
     pub fn map(&mut self, page_table: &mut PageTable) {
         for vpn in self.vpn_range {
             self.map_one(page_table, vpn);
@@ -280,17 +330,21 @@ impl MapArea {
             self.unmap_one(page_table, vpn);
         }
     }
-    /// data: start-aligned but maybe with shorter length
+    // copy data from slice `data` to logical segment
+    /// 调用它的时候需要满足：切片 data 中的数据大小不超过当前逻辑段的 总大小，
+    /// 且切片中的数据会被对齐到逻辑段的开头，然后逐页拷贝到实际的物理页帧。
+    /// data: start-aligned but maybe with shorter length   
     /// assume that all frames were cleared before
     pub fn copy_data(&mut self, page_table: &mut PageTable, data: &[u8]) {
         assert_eq!(self.map_type, MapType::Framed);
         let mut start: usize = 0;
         let mut current_vpn = self.vpn_range.get_start();
         let len = data.len();
+        // for each frame that should be copy
         loop {
             let src = &data[start..len.min(start + PAGE_SIZE)];
             let dst = &mut page_table
-                .translate(current_vpn)
+                .translate(current_vpn) // to PPN
                 .unwrap()
                 .ppn()
                 .get_bytes_array()[..src.len()];
@@ -301,6 +355,9 @@ impl MapArea {
             }
             current_vpn.step();
         }
+    }
+    pub fn is_map(&self, vpn:VirtPageNum) -> bool {
+        return self.vpn_range.get_start().0 <= vpn.0 && self.vpn_range.get_end().0 > vpn.0;
     }
 }
 

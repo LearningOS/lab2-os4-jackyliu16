@@ -18,7 +18,7 @@ impl FrameTracker {
         // page cleaning
         let bytes_array = ppn.get_bytes_array();
         for i in bytes_array {
-            *i = 0;
+            *i = 0;     // clean everything inside this frame
         }
         Self { ppn }
     }
@@ -35,7 +35,7 @@ impl Drop for FrameTracker {
         frame_dealloc(self.ppn);
     }
 }
-
+// Physical page frame Manager need to do ( like a abstract class ? [describute the action])
 trait FrameAllocator {
     fn new() -> Self;
     fn alloc(&mut self) -> Option<PhysPageNum>;
@@ -71,7 +71,7 @@ impl FrameAllocator for StackFrameAllocator {
     // 1. first check if have anykind of recycled physical page
     //      if => ret
     //      else => allocate from [current, end)
-
+    //          pick first one and ret 
     fn alloc(&mut self) -> Option<PhysPageNum> {
         if let Some(ppn) = self.recycled.pop() {
             Some(ppn.into())
@@ -82,6 +82,8 @@ impl FrameAllocator for StackFrameAllocator {
             Some((self.current - 1).into())
         }
     }
+    // 1. check if legal 
+    //      => it inside the recycled queue
     fn dealloc(&mut self, ppn: PhysPageNum) {
         let ppn = ppn.0;
         // validity check   check if this PhyPage been alloc and haven't been dealloc
@@ -96,6 +98,7 @@ impl FrameAllocator for StackFrameAllocator {
 type FrameAllocatorImpl = StackFrameAllocator;
 
 lazy_static! {
+    // create a global inistance of frame allocator
     /// frame allocator instance through lazy_static!
     pub static ref FRAME_ALLOCATOR: UPSafeCell<FrameAllocatorImpl> =
         unsafe { UPSafeCell::new(FrameAllocatorImpl::new()) };

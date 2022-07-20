@@ -15,13 +15,17 @@ fn main() -> i32 {
     let start: usize = 0x10000000;
     let len: usize = 4096;
     let prot: usize = 3;
+    println!("========= test from mmap0: ==========\n");
+    println!("line19");
     assert_eq!(0, mmap(start, len, prot));
+    println!("line21");
     for i in start..(start + len) {
         let addr: *mut u8 = i as *mut u8;
         unsafe {
             *addr = i as u8;
         }
     }
+    println!("line 27");
     for i in start..(start + len) {
         let addr: *mut u8 = i as *mut u8;
         unsafe {
