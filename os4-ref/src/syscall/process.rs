@@ -1,6 +1,5 @@
 //! Process management syscalls
 
-use core::iter::Take;
 
 use crate::config::MAX_SYSCALL_NUM;
 use crate::task::{exit_current_and_run_next, suspend_current_and_run_next, TaskStatus};
@@ -61,5 +60,7 @@ pub fn sys_munmap(_start: usize, _len: usize) -> isize {
 #[allow(unused_variables)]
 // TODO YOUR JOB: 引入虚地址后重写 sys_task_info
 pub fn sys_task_info(ti: *mut TaskInfo) -> isize {
+    let (s, st, t) = get;
+
     -1
 }

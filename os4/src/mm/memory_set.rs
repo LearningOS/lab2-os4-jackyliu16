@@ -73,6 +73,26 @@ impl MemorySet {
         }
         self.areas.push(map_area);
     }
+    #[allow(unused)]
+    pub fn remove_map_area(&mut self, start_va: VirtPageNum) -> bool {
+        // 理论上不会存在错误?
+        // for map_area in self.areas.iter() {
+        //     if map_area.vpn_range.get_start() == start_va && map_area.vpn_range.get_end() == end_va {
+        //         // map_area.unmap(page_table)
+        //         drop(map_area);
+        //     }
+        // }
+        
+        for i in 0..self.areas.len() {
+            if self.areas[i].is_map(start_va) {
+                self.areas[i].unmap(&mut self.page_table);
+                self.areas.remove(i);
+                return true;
+            } else { println!("error ");}
+        }
+        false
+
+    }
     /// Mention that trampoline is not collected by areas.
     fn map_trampoline(&mut self) {
         self.page_table.map(
@@ -225,6 +245,24 @@ impl MemorySet {
     pub fn translate(&self, vpn: VirtPageNum) -> Option<PageTableEntry> {
         self.page_table.translate(vpn)
     }
+    // check if all his MapArea has been map
+    pub fn is_all_map(&self, vpn: VirtPageNum) -> bool{
+        for item in self.areas.iter() {
+            if item.is_map(vpn) {
+                return true
+            }
+        }
+        false
+    }
+
+    pub fn is_not_all_map(&self, vpn: VirtPageNum) -> bool {
+        for item in self.areas.iter() {
+            if item.is_map(vpn) {
+                return false
+            }
+        }
+        true
+    }
 }
 
 // using for describute logically in segments ( which contains a kinds of .bss, .data and so on. )
@@ -317,6 +355,9 @@ impl MapArea {
             }
             current_vpn.step();
         }
+    }
+    pub fn is_map(&self, vpn:VirtPageNum) -> bool {
+        return self.vpn_range.get_start().0 <= vpn.0 && self.vpn_range.get_end().0 > vpn.0;
     }
 }
 

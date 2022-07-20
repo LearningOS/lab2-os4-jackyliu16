@@ -175,3 +175,24 @@ pub fn translated_byte_buffer(token: usize, ptr: *const u8, len: usize) -> Vec<&
     }
     v
 }
+
+
+// public function:
+// pub fn get_phyAddr(token: usize, p: &mut syscall::process ) {
+
+// }
+
+// #[allow(unused, dead_code)]
+// token: the address of current user
+// p: a address of pointer 
+// we changing the address of pointer to a frame 
+pub fn get_phy_addr(token: usize, p: usize) -> usize{
+    let page_table = PageTable::from_token(token);           // get page table 
+    let virt_addr = VirtAddr(p);                                   // get VA from pointer
+    let vpn = virt_addr.floor();                                // get VPN
+    let ppn = page_table                              //   
+                                        .translate(vpn)// using page table and VPN to find PPN
+                                        .unwrap()                       
+                                        .ppn();
+    ppn.0 << 12 | virt_addr.page_offset() as usize
+}

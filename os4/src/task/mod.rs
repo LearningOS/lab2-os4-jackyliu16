@@ -1,6 +1,6 @@
 //! Task management implementation
 //!
-//! Everything about task management, like starting and switching tasks is
+//! Everything about tas&k management, like starting and switching tasks is
 //! implemented here.
 //!
 //! A single global instance of [`TaskManager`] called `TASK_MANAGER` controls
@@ -14,7 +14,9 @@ mod switch;
 #[allow(clippy::module_inception)]
 mod task;
 
+use crate::config::MAX_SYSCALL_NUM;
 use crate::loader::{get_app_data, get_num_app};
+use crate::mm::{VirtAddr, MapPermission, VirtPageNum};
 use crate::sync::UPSafeCell;
 use crate::trap::TrapContext;
 use alloc::vec::Vec;
@@ -69,6 +71,7 @@ lazy_static! {
         }
     };
 }
+use crate::timer::get_time_us;
 
 impl TaskManager {
     /// Run the first task in task list.
@@ -79,6 +82,9 @@ impl TaskManager {
         let mut inner = self.inner.exclusive_access();
         let next_task = &mut inner.tasks[0];
         next_task.task_status = TaskStatus::Running;
+
+        next_task.stats.first_run_time = get_time_us();
+
         let next_task_cx_ptr = &next_task.task_cx as *const TaskContext;
         drop(inner);
         let mut _unused = TaskContext::zero_init();
@@ -135,6 +141,9 @@ impl TaskManager {
             let current = inner.current_task;
             inner.tasks[next].task_status = TaskStatus::Running;
             inner.current_task = next;
+
+            inner.tasks[next].stats.first_run_time = get_time_us();
+
             let current_task_cx_ptr = &mut inner.tasks[current].task_cx as *mut TaskContext;
             let next_task_cx_ptr = &inner.tasks[next].task_cx as *const TaskContext;
             drop(inner);
@@ -147,6 +156,96 @@ impl TaskManager {
             panic!("All applications completed!");
         }
     }
+
+    #[allow(dead_code)]
+    // TODO finish sys_tasks_info
+    fn get_current_task_info(&self) -> (TaskStatus, [u32; MAX_SYSCALL_NUM], usize) {
+        let inner = self.inner.exclusive_access();
+        let status = inner.tasks[inner.current_task].task_status;
+        let (syscall_record, total_time) = inner.tasks[inner.current_task].stats.get_info();
+        (status, syscall_record, total_time)
+    }
+    
+    fn record_syscall(&self, syscall_id: usize){
+        let mut inner = self.inner.exclusive_access();
+        let current_task = inner.current_task;
+        inner.tasks[current_task].stats.system_call_record[syscall_id]+=1;
+    }
+
+    #[allow(unused_variables)]
+    fn mmap(&self, start: usize, len:usize, port:usize) -> isize {
+        let mut inner = self.inner.exclusive_access();
+        let current_task = inner.current_task;
+        
+        let start_va = VirtAddr::from(start).floor();
+        let end_va = VirtAddr::from(start+len).ceil();
+
+        for i in start_va.0..end_va.0 {
+            // i.into();
+            if inner.tasks[current_task].memory_set.is_all_map(crate::mm::VirtPageNum(i)) {
+                println!("[task::mod::TaskManager]there is a overlap");
+                return -1;
+            }
+        }
+
+        println!("{}", port);
+
+        // allow user to using this page in User mode 
+        let permission = MapPermission::from_bits(((port << 1) | 16) as u8);
+       // let a = MapPermission::from_bits((port << 1) as u8);
+        inner.tasks[current_task].memory_set.insert_framed_area(VirtAddr(start), VirtAddr(start+len), permission.unwrap());
+        
+
+        0
+    }
+
+    fn unmap(&self, start: usize, len: usize) -> isize {
+        let mut inner = self.inner.exclusive_access();
+        let current_task = inner.current_task;
+
+        // println!("start:{}; len:{}", start, len);
+
+        let start_va = VirtAddr::from(start).floor();
+        let end_va = VirtAddr::from(start+len).ceil();
+        print!("start:{}, end:{}", start_va.0, end_va.0);
+        
+        for i in start_va.0..end_va.0 {
+            if inner.tasks[current_task].memory_set.is_not_all_map(crate::mm::VirtPageNum(i)){
+                println!("[TaskManager::umap]:  there is a variable haven't been map");
+                return -1;
+            }
+        }
+        
+        /*
+        1. BC the `MemorySet` is belong to application, so we just using it
+        2. for each PTE in this delete area 
+            3. for each segment inside the `MemorySet` check if it has been map 
+                4. if it has been map for each VPN inside it unmap it 
+                5. delete this segment 
+
+        [abandon]
+        for unmap action's i think the most important actions it :
+        1. get this `MemorySet`
+        2. trying to find the `MapArea` that you want to delete.
+            3. for each `MapArea` in the `MemorySet`
+                4. check it's `VPNRange` to identity that MapArea we want to delete
+                5. using it's `unmap` function to unmap all map in this `MapArea` 
+        */
+
+        for i in start_va.0..end_va.0 {
+            inner.tasks[current_task].memory_set.remove_map_area(VirtPageNum(i));
+        }
+        // for i in start_va.0..end_va.0 {
+        //     if !inner.tasks[current_task].memory_set.unmap(VirtPageNum(i)) {
+        //         return -1;
+        //     }
+        // }
+        
+        
+        
+        0
+    }
+
 }
 
 /// Run the first task in task list.
@@ -190,4 +289,21 @@ pub fn current_user_token() -> usize {
 /// Get the current 'Running' task's trap contexts.
 pub fn current_trap_cx() -> &'static mut TrapContext {
     TASK_MANAGER.get_current_trap_cx()
+}
+
+// return task information
+pub fn get_task_info() -> (TaskStatus, [u32; MAX_SYSCALL_NUM], usize){
+    TASK_MANAGER.get_current_task_info()
+}
+
+pub fn record_syscall(syscall_id: usize){
+    TASK_MANAGER.record_syscall(syscall_id);
+}
+
+pub fn mmap(start:usize, len:usize, port:usize) -> isize {
+    TASK_MANAGER.mmap(start, len, port)
+}
+
+pub fn unmap(start: usize, len:usize) -> isize{
+    TASK_MANAGER.unmap(start, len)
 }
